@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación Órbita Terrestre</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        /* Estilos generales para el cuerpo */
+        body {
+            margin: 0;
+            overflow: hidden; /* Oculta barras de desplazamiento */
+            font-family: 'Inter', sans-serif; /* Fuente recomendada */
+            background-color: #000; /* Fondo oscuro para el espacio */
+            color: #fff; /* Color de texto blanco */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Altura mínima de la ventana */
+        }
+
+        /* Contenedor principal de la simulación */
+        #simulation-container {
+            width: 100%;
+            height: 100vh; /* La simulación ocupa toda la altura de la ventana */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative; /* Para posicionar el lienzo dentro */
+        }
+
+        /* Estilos para el lienzo (canvas) de Three.js */
+        canvas {
+            display: block; /* Elimina márgenes extra */
+            background-color: #000; /* Asegura un fondo negro si Three.js no se inicializa inmediatamente */
+            border-radius: 10px; /* Bordes redondeados para el lienzo */
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2); /* Sombra suave para destacar */
+        }
+
+        /* Mensaje de carga */
+        #loading-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5em;
+            color: #fff;
+        }
+
+        /* Contenedor de instrucciones */
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.9em;
+            text-align: center;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="simulation-container">
+        <div id="loading-message">Cargando simulación...</div>
+        <!-- El lienzo de Three.js se insertará aquí dinámicamente -->
+    </div>
+    <div id="instructions">
+        Usa el ratón (clic y arrastrar) para rotar la vista.
+    </div>
+
+    <script type="module">
+        // Importa las funciones necesarias de Three.js
+        // Aunque se carga por CDN, se usa el patrón de variables globales de Three.js.
+
+        // Variables globales de Three.js
+        let scene, camera, renderer;
+        let sun, earth;
+        let orbitAngle = 0; // Ángulo de la órbita de la Tierra
+        const ORBIT_RADIUS = 5; // Radio de la órbita terrestre
+        const EARTH_ORBIT_SPEED = 0.01; // Velocidad de la órbita terrestre
+        const EARTH_ROTATION_SPEED = 0.02; // Velocidad de rotación de la Tierra
+
+        // Variables para el control de la cámara con el ratón
+        let isDragging = false;
+        let previousMouseX = 0;
+        let previousMouseY = 0;
+        const ROTATION_SPEED = 0.005; // Sensibilidad de rotación de la cámara
+
+        // Función para inicializar la escena 3D
+        function init() {
+            // Eliminar mensaje de carga
+            document.getElementById('loading-message').style.display = 'none';
+
+            // 1. Crear la escena
+            scene = new THREE.Scene();
+
+            // 2. Crear la cámara (PerspectiveCamera: campo de visión, aspecto, near, far)
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, ORBIT_RADIUS * 1.5, ORBIT_RADIUS * 3); // Posición inicial de la cámara
+            camera.lookAt(0, 0, 0); // La cámara mira al origen
+
+            // 3. Crear el renderizador WebGL
+            renderer = new THREE.WebGLRenderer({ antialias: true }); // antialias para suavizar bordes
+            renderer.setSize(window.innerWidth, window.innerHeight); // Tamaño del renderizador
+            renderer.setClearColor(0x000000); // Color de fondo del renderizador (negro)
+            // Añadir el elemento canvas al contenedor
+            document.getElementById('simulation-container').appendChild(renderer.domElement);
+
+            // 4. Añadir luces a la escena
+            // Luz ambiental: ilumina uniformemente todos los objetos en la escena
+            const ambientLight = new THREE.AmbientLight(0x333333); // Luz suave
+            scene.add(ambientLight);
+
+            // Luz puntual (simulando el Sol): emite luz desde un punto en todas direcciones
+            const sunLight = new THREE.PointLight(0xffffff, 1, 100); // Color blanco, intensidad 1, distancia 100
+            sunLight.position.set(0, 0, 0); // La luz está en la posición del Sol
+            scene.add(sunLight);
+
+            // 5. Crear el Sol
+            const sunGeometry = new THREE.SphereGeometry(1, 32, 32); // Radio 1, segmentos 32x32
+            // Material básico: no se ve afectado por la luz, ideal para el Sol (auto-iluminado)
+            const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Color amarillo brillante
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            scene.add(sun);
+
+            // 6. Crear la Tierra
+            const earthGeometry = new THREE.SphereGeometry(0.3, 32, 32); // Radio 0.3
+            // Material estándar: responde a las luces, ideal para la Tierra
+            const earthMaterial = new THREE.MeshStandardMaterial({ color: 0x0000ff }); // Color azul
+            earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            // Posición inicial de la Tierra, en el radio de órbita
+            earth.position.set(ORBIT_RADIUS, 0, 0);
+            scene.add(earth);
+
+            // 7. Opcional: Crear una órbita visual (línea o toro)
+            const orbitGeometry = new THREE.RingGeometry(ORBIT_RADIUS - 0.01, ORBIT_RADIUS + 0.01, 64);
+            const orbitMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide });
+            const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+            orbit.rotation.x = Math.PI / 2; // Rotar para que sea horizontal
+            scene.add(orbit);
+
+            // Añadir manejadores de eventos para el redimensionamiento de la ventana
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Añadir manejadores de eventos para el control de la cámara con el ratón
+            renderer.domElement.addEventListener('mousedown', onMouseDown, false);
+            renderer.domElement.addEventListener('mousemove', onMouseMove, false);
+            renderer.domElement.addEventListener('mouseup', onMouseUp, false);
+            renderer.domElement.addEventListener('mouseleave', onMouseUp, false); // Detener arrastre si el ratón sale del canvas
+        }
+
+        // Función que se llama cuando la ventana se redimensiona
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight; // Actualiza el aspecto de la cámara
+            camera.updateProjectionMatrix(); // Actualiza la matriz de proyección de la cámara
+            renderer.setSize(window.innerWidth, window.innerHeight); // Redimensiona el renderizador
+            renderer.render(scene, camera); // Vuelve a renderizar la escena
+        }
+
+        // Manejadores de eventos del ratón
+        function onMouseDown(event) {
+            isDragging = true;
+            previousMouseX = event.clientX;
+            previousMouseY = event.clientY;
+            renderer.domElement.style.cursor = 'grabbing';
+        }
+
+        function onMouseMove(event) {
+            if (!isDragging) return;
+
+            const deltaX = event.clientX - previousMouseX;
+            const deltaY = event.clientY - previousMouseY;
+
+            // Rotar la escena o la cámara
+            // Para simplificar, rotaremos la cámara alrededor del punto de origen (0,0,0)
+            const vector = new THREE.Vector3();
+            camera.getWorldDirection(vector); // Obtiene la dirección actual de la cámara
+
+            // Rotar alrededor del eje Y (horizontal)
+            const axisY = new THREE.Vector3(0, 1, 0);
+            camera.position.applyAxisAngle(axisY, -deltaX * ROTATION_SPEED);
+
+            // Rotar alrededor del eje X local de la cámara (vertical)
+            const axisX = new THREE.Vector3().crossVectors(vector, axisY).normalize();
+            camera.position.applyAxisAngle(axisX, deltaY * ROTATION_SPEED);
+
+            camera.lookAt(0, 0, 0); // Asegura que la cámara siempre mire al centro
+
+            previousMouseX = event.clientX;
+            previousMouseY = event.clientY;
+        }
+
+        function onMouseUp() {
+            isDragging = false;
+            renderer.domElement.style.cursor = 'grab';
+        }
+
+        // Función para animar la simulación
+        function animate() {
+            requestAnimationFrame(animate); // Solicita el siguiente frame de animación
+
+            // Actualizar el ángulo de órbita
+            orbitAngle += EARTH_ORBIT_SPEED;
+
+            // Calcular la nueva posición de la Tierra en su órbita
+            // La órbita es circular en el plano XZ (horizontal)
+            earth.position.x = ORBIT_RADIUS * Math.cos(orbitAngle);
+            earth.position.z = ORBIT_RADIUS * Math.sin(orbitAngle);
+
+            // Rotar la Tierra sobre su propio eje
+            earth.rotation.y += EARTH_ROTATION_SPEED;
+
+            renderer.render(scene, camera); // Renderizar la escena con la cámara actual
+        }
+
+        // Iniciar la simulación cuando la ventana se haya cargado completamente
+        window.onload = function() {
+            init(); // Inicializa la escena
+            animate(); // Comienza el bucle de animación
+            renderer.domElement.style.cursor = 'grab'; // Establecer cursor inicial
+        };
+    </script>
+</body>
+</html>
+"Initial commit: Earth Orbit Simulation"
